@@ -63,6 +63,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient();
     let pollInterval: NodeJS.Timeout;
+    let isFirstLoad = true;
 
     async function loadData() {
       try {
@@ -70,13 +71,27 @@ export default function DashboardPage() {
 
         if (queryError) {
           console.error("Query error:", queryError);
+          if (isFirstLoad) {
+            setError("Failed to load concepts");
+            setLoading(false);
+            isFirstLoad = false;
+          }
           return;
         }
 
         console.log("Loaded:", data?.length, "concepts");
         setRows(data ?? []);
+        if (isFirstLoad) {
+          setLoading(false);
+          isFirstLoad = false;
+        }
       } catch (err) {
         console.error("Load error:", err);
+        if (isFirstLoad) {
+          setError("Failed to load concepts");
+          setLoading(false);
+          isFirstLoad = false;
+        }
       }
     }
 
