@@ -59,7 +59,16 @@ export async function POST(req: Request) {
     );
   }
 
-  const supabase = createClient();
+  let supabase;
+  try {
+    supabase = createClient();
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: "Supabase client initialization failed", details: err?.message ?? String(err) },
+      { status: 500 }
+    );
+  }
+
   const now = new Date().toISOString();
 
   const { error } = await supabase.from("concepts").upsert(

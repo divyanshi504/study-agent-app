@@ -20,7 +20,6 @@ function getAnthropicClient() {
   });
 }
 
-const anthropicClient = getAnthropicClient();
 
 type RequestBody = {
   userMessage: string;
@@ -88,13 +87,30 @@ export async function POST(req: Request) {
 
   const prompt = `User message: ${userMessage}`;
 
-  const result = await generateText({
-    model: anthropicClient("claude-sonnet-4-5"),
-    system: systemPrompt,
-    prompt,
-    maxRetries: 0,
-  });
+  try {
+    let anthropicClient;
+    try {
+      anthropicClient = getAnthropicClient();
+    } catch (err: any) {
+      return NextResponse.json(
+        { error: "Anthropic client initialization failed", details: err?.message ?? String(err) },
+        { status: 500 }
+      );
+    }
 
-  const detection = parseDetectionResult(result.text);
-  return NextResponse.json(detection);
+    const result = await generateText({
+      model: anthropicClient("claude-sonnet-4-5"),
+      system: systemPrompt,
+      prompt,
+      maxRetries: 0,
+    });
+
+    const detection = parseDetectionResult(result.text);
+    return NextResponse.json(detection);
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: "Internal server error", details: err?.message ?? String(err) },
+      { status: 500 }
+    );
+  }
 }

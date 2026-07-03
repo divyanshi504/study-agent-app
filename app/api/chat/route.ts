@@ -21,7 +21,6 @@ function getAnthropicClient() {
   });
 }
 
-const anthropicClient = getAnthropicClient();
 
 type RequestBody = {
   userMessage: string;
@@ -79,42 +78,71 @@ export async function POST(req: Request) {
 
   let conceptRow: ConceptRow | null = null;
 
-  if (subject && concept) {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("concepts")
-      .select("mastery_level,weak_areas,strong_areas")
-      .eq("subject", subject)
-      .eq("concept", concept)
-      .maybeSingle();
+  try {
+    if (subject && concept) {
+      let supabase;
+      try {
+        supabase = createClient();
+      } catch (err: any) {
+        return NextResponse.json(
+          { error: "Supabase client initialization failed", details: err?.message ?? String(err) },
+          { status: 500 }
+        );
+      }
 
-    if (error) {
+      try {
+        const { data, error } = await supabase
+          .from("concepts")
+          .select("mastery_level,weak_areas,strong_areas")
+          .eq("subject", subject)
+          .eq("concept", concept)
+          .maybeSingle();
+
+        if (error) {
+          console.warn("Supabase query error:", error.message);
+          conceptRow = null;
+        } else {
+          conceptRow = data;
+        }
+      } catch (err: any) {
+        console.warn("Supabase request failed:", err?.message ?? String(err));
+        conceptRow = null;
+      }
+    }
+
+    const systemPrompt = buildPrompt(
+      conceptRow,
+      subject || "the subject",
+      concept || "the concept"
+    );
+
+    let anthropicClient;
+    try {
+      anthropicClient = getAnthropicClient();
+    } catch (err: any) {
       return NextResponse.json(
-        { error: "Failed to fetch concept profile from Supabase" },
+        { error: "Anthropic client initialization failed", details: err?.message ?? String(err) },
         { status: 500 }
       );
     }
 
-    conceptRow = data;
+    const result = await streamText({
+      model: anthropicClient("claude-sonnet-4-5"),
+      system: systemPrompt,
+      prompt: userMessage,
+      maxRetries: 0,
+    });
+
+    return new NextResponse(result.textStream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: "Internal server error", details: err?.message ?? String(err) },
+      { status: 500 }
+    );
   }
-
-  const systemPrompt = buildPrompt(
-    conceptRow,
-    subject || "the subject",
-    concept || "the concept"
-  );
-
-  const result = await streamText({
-    model: anthropicClient("claude-sonnet-4-5"),
-    system: systemPrompt,
-    prompt: userMessage,
-    maxRetries: 0,
-  });
-
-  return new NextResponse(result.textStream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-cache",
-    },
-  });
 }
