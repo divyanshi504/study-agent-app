@@ -62,48 +62,50 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const supabase = createClient();
+    let pollInterval: NodeJS.Timeout;
 
-    async function loadInitialData() {
+    async function loadData() {
       try {
         const { data, error: queryError } = await supabase.from("concepts").select("*");
 
         if (queryError) {
-          setError("Failed to load concepts");
-          setLoading(false);
+          console.error("Query error:", queryError);
           return;
         }
 
+        console.log("Loaded:", data?.length, "concepts");
         setRows(data ?? []);
-        setLoading(false);
       } catch (err) {
-        setError("Failed to load concepts");
-        setLoading(false);
+        console.error("Load error:", err);
       }
     }
 
-    loadInitialData();
+    // Load initial data
+    loadData();
 
+    // Set up real-time subscription (for instant updates if available)
     const channel = supabase
       .channel("concepts-changes")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "concepts" },
         (payload) => {
-          if (payload.eventType === "INSERT") {
-            setRows((prev) => [...prev, payload.new as ConceptRow]);
-          } else if (payload.eventType === "UPDATE") {
-            setRows((prev) =>
-              prev.map((row) => (row.id === payload.new.id ? (payload.new as ConceptRow) : row))
-            );
-          } else if (payload.eventType === "DELETE") {
-            setRows((prev) => prev.filter((row) => row.id !== payload.old.id));
-          }
+          console.log("Real-time event:", payload.eventType);
+          loadData();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Realtime subscription:", status);
+      });
+
+    // Also poll for updates every 2 seconds as a fallback
+    pollInterval = setInterval(() => {
+      loadData();
+    }, 2000);
 
     return () => {
       channel.unsubscribe();
+      clearInterval(pollInterval);
     };
   }, []);
   const totalConcepts = rows.length;
