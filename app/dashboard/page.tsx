@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";
 import { createClient } from "../../lib/supabase";
 
@@ -52,19 +55,57 @@ function formatDate(value: string | null) {
   });
 }
 
-async function getConceptRows() {
-  const supabase = createClient();
-  const { data, error } = await supabase.from("concepts").select("*");
+export default function DashboardPage() {
+  const [rows, setRows] = useState<ConceptRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (error) {
-    throw new Error("Failed to load concepts");
-  }
+  useEffect(() => {
+    const supabase = createClient();
 
-  return data ?? [];
-}
+    async function loadInitialData() {
+      try {
+        const { data, error: queryError } = await supabase.from("concepts").select("*");
 
-export default async function DashboardPage() {
-  const rows = await getConceptRows();
+        if (queryError) {
+          setError("Failed to load concepts");
+          setLoading(false);
+          return;
+        }
+
+        setRows(data ?? []);
+        setLoading(false);
+      } catch (err) {
+        setError("Failed to load concepts");
+        setLoading(false);
+      }
+    }
+
+    loadInitialData();
+
+    const channel = supabase
+      .channel("concepts-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "concepts" },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            setRows((prev) => [...prev, payload.new as ConceptRow]);
+          } else if (payload.eventType === "UPDATE") {
+            setRows((prev) =>
+              prev.map((row) => (row.id === payload.new.id ? (payload.new as ConceptRow) : row))
+            );
+          } else if (payload.eventType === "DELETE") {
+            setRows((prev) => prev.filter((row) => row.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, []);
   const totalConcepts = rows.length;
   const uniqueSubjects = new Set(rows.map((row) => row.subject)).size;
   const averageScore =
@@ -76,6 +117,32 @@ export default async function DashboardPage() {
             100 /
             4
         );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <NavBar />
+        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <div className="rounded-[2rem] border border-slate-800 bg-slate-900/95 p-6 shadow-xl shadow-slate-950/40">
+            <p className="text-slate-400">Loading your concepts...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <NavBar />
+        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <div className="rounded-[2rem] border border-slate-800 bg-slate-900/95 p-6 shadow-xl shadow-slate-950/40">
+            <p className="text-red-300">{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
